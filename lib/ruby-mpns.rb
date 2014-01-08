@@ -25,7 +25,7 @@ module MicrosoftPushNotificationService
     uri = URI.parse(self.device_uri)
 
     request = Net::HTTP::Post.new(uri.request_uri)
-    request.content_type = 'text/xml'
+    request.content_type = content_type_header_for_type(type)
     request['X-WindowsPhone-Target'] = windowsphone_target_header_for_type(type)
     request['X-NotificationClass'] = notification_class
     request.body = notification
@@ -34,13 +34,18 @@ module MicrosoftPushNotificationService
     Net::HTTP.start(uri.host, uri.port) { |http| http.request request }
   end
 
+  def self.build_notification(type, options = {})
+    mpns = Object.new
+    mpns.extend MicrosoftPushNotificationService
 
-protected
+    mpns.build_notification type, options
+  end
 
-  def safe_type_to_sym(type)
-    sym = type.to_sym unless type.nil?
-    sym = :raw unless [:tile, :toast].include?(sym)
-    sym
+  def self.windowsphone_target_header_for_type(type)
+    mpns = Object.new
+    mpns.extend MicrosoftPushNotificationService
+
+    mpns.windowsphone_target_header_for_type type
   end
 
   def windowsphone_target_header_for_type(type)
@@ -51,20 +56,36 @@ protected
     type.to_s if [:token, :toast].include?(type.to_sym)
   end
 
+  def content_type_header_for_type(type)
+    content_type = 'text/xml'
+    content_type = 'application/octet-stream' if [:raw].include?(type.to_sym)
+    content_type
+  end
+
+  def build_notification(type, options = {})
+    notification_builder = notification_builder_for_type(type)
+    send(notification_builder, options)
+  end
+
+protected
+
+  def safe_type_to_sym(type)
+    sym = type.to_sym unless type.nil?
+    sym = :raw unless [:tile, :toast, :raw, :raw_xml].include?(sym)
+    sym
+  end
+
   def notification_builder_for_type(type)
     case type
     when :tile
       :tile_notification_with_options
     when :toast
       :toast_notification_with_options
-    else
+    when :raw_xml
       :raw_notification_with_options
+    else
+      :raw_json_notification_with_options
     end
-  end
-
-  def build_notification(type, options = {})
-    notification_builder = notification_builder_for_type(type)
-    send(notification_builder, options)
   end
 
   # Tile options :
@@ -116,6 +137,9 @@ protected
     xml.instruct!
     xml.root { build_hash(xml, options) }
     [xml.target!, '3']
+  end
+  def raw_json_notification_with_options(options = {})
+    [options.to_json, '3']
   end
 
   def build_hash(xml, options)
